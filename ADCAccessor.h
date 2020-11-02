@@ -13,7 +13,7 @@ class ADCAccessor{
         Protocentral_ADS1220 pc_ads1220;
 
     public:
-        ADCAccessor(uint8_t DRDYpin, uint8_t CSpin);
+        ADCAccessor(uint8_t CSpin, uint8_t DRDYpin);
         void begin(uint8_t speed, uint8_t gain, uint8_t mux);
         float readADCValue();
         void enable();

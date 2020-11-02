@@ -16,7 +16,7 @@ volatile unsigned int interruptCounter;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 //
-ADCAccessor adc(ADS1220_DRDY_PIN, ADS1220_CS_PIN);
+ADCAccessor adc(ADS1220_CS_PIN, ADS1220_DRDY_PIN);
 
 // ISR
 void IRAM_ATTR onDataReady() {
