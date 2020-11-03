@@ -5,8 +5,6 @@
 
 // コンストラクタ
 ADCAccessor::ADCAccessor(uint8_t CSpin, uint8_t DRDYpin){
-    // プロパティ初期化
-    isEnabled = false;
 
     // ピン初期化
     this->DRDYpin = DRDYpin;
@@ -22,12 +20,6 @@ void ADCAccessor::begin(uint8_t speed, uint8_t gain, uint8_t mux){
     pc_ads1220.set_pga_gain(gain);
     pc_ads1220.select_mux_channels(mux);
     pc_ads1220.Start_Conv();
-}
-
-// ADC有効化
-void ADCAccessor::enable(){
-    pc_ads1220.Start_Conv();
-    this->isEnabled = true;
 }
 
 // ADCから値を読み込む 値が無効なら直近のものを返す

@@ -32,7 +32,6 @@ void setup(){
 
     // ADC初期化
     adc.begin(DR_1000SPS, PGA_GAIN_1, MUX_AIN0_AIN1);
-    adc.enable();
 
     // 割込み有効化
     attachInterrupt(ADS1220_DRDY_PIN, &onDataReady, FALLING);
