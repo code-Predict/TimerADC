@@ -11,6 +11,8 @@ ADCAccessor::ADCAccessor(uint8_t CSpin, uint8_t DRDYpin){
     this->CSpin = CSpin;
     pinMode(DRDYpin, INPUT);
     pinMode(CSpin, OUTPUT);
+
+    this->adcValue = 0.00;
 }
 
 // ADC初期化
@@ -22,14 +24,13 @@ void ADCAccessor::begin(uint8_t speed, uint8_t gain, uint8_t mux){
     pc_ads1220.Start_Conv();
 }
 
-// ADCから値を読み込む 値が無効なら直近のものを返す
-float ADCAccessor::readADCValue(){
-    static float value = 0;
-    if(this->isEnabled){
-        float tmp = pc_ads1220.Read_WaitForData();
-        value = (tmp != 0) ? tmp : value;
-        return value;
-    }else{
-        return 0;
-    }
+// ADCの値を取得
+float ADCAccessor::getADCValue(){
+    return this->adcValue;
+}
+
+// ADCの値を更新 無効な値が返されたら無視
+void ADCAccessor::updateADCValue(){
+    float tmp = pc_ads1220.Read_WaitForData();
+    this->adcValue = (tmp != 0) ? tmp : this->adcValue;
 }
