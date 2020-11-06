@@ -59,9 +59,9 @@ void setup(){
     attachInterrupt(ADS1220_DRDY_PIN, &onDataReady, FALLING);
 
     // タイマ割り込み(1ms)有効化
-    timer = timerBegin(0, 80. true);
-    timerAttachInterruot(timer, &onTimer, true);
-    timerAlarmWriter(timer, 1000, true);
+    timer = timerBegin(0, 80, true);
+    timerAttachInterrupt(timer, &onTimer, true);
+    timerAlarmWrite(timer, 1000, true);
     timerAlarmEnable(timer);
 }
 
