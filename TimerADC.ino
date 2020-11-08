@@ -2,31 +2,34 @@
  * タイマ割込みでADCをいじる
 */
 #include "ADCAccessor.h"
+#include "Buffer.h"
 
+// ADC定数
 #define PGA 1
 #define VREF 2.048
-#define VFSR VREF/PGA
-#define FSR (((long int)1<<23)-1)
-#define INTVECT_SIZE 5
-
 #define ADS1220_CS_PIN    16
 #define ADS1220_DRDY_PIN  4
+#define BUFFER_SIZE 2000
 
-// vars
+// 割り込みベクタサイズ
+#define INTVECT_SIZE 5
+
+// --
 ADCAccessor adc(ADS1220_CS_PIN, ADS1220_DRDY_PIN);
+Buffer adcStreamBuffer, *B;
 hw_timer_t *timer = NULL;
 
 // ユーザ定義割込み関数
 void dumpADCValue();
-void pushDataToBuffer();
+void buffering();
 
-// 割込みテーブル設定
+// 割込みテーブル
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 volatile unsigned int interruptCounter[INTVECT_SIZE] = {};
 void nopVect();
 void (*intVect[])() = {
     dumpADCValue,
-    pushDataToBuffer,
+    buffering,
     nopVect,
     nopVect,
     nopVect
@@ -54,9 +57,9 @@ void setup(){
 
     // ADC初期化
     adc.begin(DR_1000SPS, PGA_GAIN_1, MUX_AIN0_AIN1);
-
-    // DRDY割込み有効化
     attachInterrupt(ADS1220_DRDY_PIN, &onDataReady, FALLING);
+    B = &adcStreamBuffer;
+    initBuffer(B, BUFFER_SIZE);
 
     // タイマ割り込み(1ms)有効化
     timer = timerBegin(0, 80, true);
@@ -79,15 +82,20 @@ void loop(){
     
 }
 
-// 変換終了時の処理
+// AD変換終了時
 void dumpADCValue(){
     // ADCの測定値を更新
     adc.updateADCValue();
 }
 
-// バッファリングタイママッチ時の処理
-void pushDataToBuffer(){
-    float adcValue = adc.getADCValue();
-    float Vout = (float)((adcValue * VFSR * 1000) / FSR);
-    Serial.println(Vout);
+// 毎ミリ秒実行される処理
+void buffering(){
+    // 電圧を計算して
+    float Vout = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
+    // バッファに突っ込む
+    Item item;
+    initItem(*item);
+    // TODO: Item構造体の中身どうする?
+    push(B, item);
 }
+
