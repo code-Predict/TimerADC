@@ -91,11 +91,11 @@ void dumpADCValue(){
 // 毎ミリ秒実行される処理
 void buffering(){
     // 電圧を計算して
-    float Vout = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
+    float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
     // バッファに突っ込む
     Item item;
     initItem(*item);
-    // TODO: Item構造体の中身どうする?
+    item.value = volts; // TODO: Item構造体の中身どうする?
     push(B, item);
 }
 

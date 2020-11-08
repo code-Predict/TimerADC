@@ -30,6 +30,5 @@ int deinitBuffer(Buffer* buffer){
 }
 
 void initItem(Item* item){
-    item->id = 0;
-    memset(item->data, '\0', 8);
+    item->value = 0.00;
 }
