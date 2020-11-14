@@ -58,6 +58,8 @@ void setup(){
     // ADC初期化
     adc.begin(DR_1000SPS, PGA_GAIN_1, MUX_AIN0_AIN1);
     attachInterrupt(ADS1220_DRDY_PIN, &onDataReady, FALLING);
+
+    // ADCストリームバッファ初期化
     B = &adcStreamBuffer;
     initBuffer(B, BUFFER_SIZE);
 
@@ -88,14 +90,25 @@ void dumpADCValue(){
     adc.updateADCValue();
 }
 
-// 毎ミリ秒実行される処理
+// バッファリングタイマによる割り込み
 void buffering(){
     // 電圧を計算して
     float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
+
     // バッファに突っ込む
     Item item;
     initItem(*item);
     item.value = volts; // TODO: Item構造体の中身どうする?
     push(B, item);
+
+    // 開始点検知
+    // *headのデータからnミリ秒後の値がx以上だったら開始点と仮定し、
+    // バッファをロックする (いっぱいになったら書き込まないように)
+    
+    // TODO: もう少し賢くやったほうがいいと思う あと1ms以内に収まらない処理はマズい
+
+    if(false){
+        lockBuffer(B);
+    }
 }
 
