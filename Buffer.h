@@ -29,7 +29,7 @@ extern "C" {
 /* -------- */
 typedef struct item {
     int id;
-    uint8_t data[8];
+    double value;
 } Item;
 
 typedef struct buffer {

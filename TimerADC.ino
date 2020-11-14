@@ -17,11 +17,14 @@
 // --
 ADCAccessor adc(ADS1220_CS_PIN, ADS1220_DRDY_PIN);
 Buffer adcStreamBuffer, *B;
-hw_timer_t *timer = NULL;
+hw_timer_t *bufTimer = NULL, *canTimer = NULL;
 
 // ユーザ定義割込み関数
 void dumpADCValue();
 void buffering();
+bool detectStartPoint();
+void sendCanBuffer();
+bool detectEndPoint();
 
 // 割込みテーブル
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
@@ -30,7 +33,7 @@ void nopVect();
 void (*intVect[])() = {
     dumpADCValue,
     buffering,
-    nopVect,
+    sendCanBuffer,
     nopVect,
     nopVect
 };
@@ -44,9 +47,16 @@ void IRAM_ATTR onDataReady() {
 }
 
 // ISR 1: バッファリングタイマコンペアマッチ
-void IRAM_ATTR onTimer(){
+void IRAM_ATTR onBufTimer(){
     portENTER_CRITICAL_ISR(&timerMux);
     interruptCounter[1]++;
+    portEXIT_CRITICAL_ISR(&timerMux);
+}
+
+// ISR 2: CANバッファ消化
+void IRAM_ATTR onCanTimer(){
+    portENTER_CRITICAL_ISR(&timerMux);
+    interruptCounter[2]++;
     portEXIT_CRITICAL_ISR(&timerMux);
 }
 
@@ -63,11 +73,17 @@ void setup(){
     B = &adcStreamBuffer;
     initBuffer(B, BUFFER_SIZE);
 
-    // タイマ割り込み(1ms)有効化
-    timer = timerBegin(0, 80, true);
-    timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 1000, true);
-    timerAlarmEnable(timer);
+    // ADCバッファリング割り込み(1ms)有効化
+    bufTimer = timerBegin(0, 80, true);
+    timerAttachInterrupt(bufTimer, &onBufTimer, true);
+    timerAlarmWrite(bufTimer, 1000, true);
+    timerAlarmEnable(bufTimer);
+
+    // CAN送信バッファ消化部(1s)有効化
+    canTimer = timerBegin(1, 80, true);
+    timerAttachInterrupt(canTimer, &onCanTimer, true);
+    timerAlarmWrite(canTimer, 1000000, true);
+    timerAlarmEnable(canTimer);
 }
 
 void loop(){
@@ -92,6 +108,8 @@ void dumpADCValue(){
 
 // バッファリングタイマによる割り込み
 void buffering(){
+    static unsigned int pushStat = BUFFER_OK;
+
     // 電圧を計算して
     float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
 
@@ -99,16 +117,62 @@ void buffering(){
     Item item;
     initItem(*item);
     item.value = volts; // TODO: Item構造体の中身どうする?
-    push(B, item);
+    pushStat = push(B, item);
 
-    // 開始点検知
-    // *headのデータからnミリ秒後の値がx以上だったら開始点と仮定し、
-    // バッファをロックする (いっぱいになったら書き込まないように)
-    
-    // TODO: もう少し賢くやったほうがいいと思う あと1ms以内に収まらない処理はマズい
-
-    if(false){
+    // 開始点を検知したらバッファをロック
+    if(detectStartPoint()){
         lockBuffer(B);
     }
+
+    // pushできなくなったら終了点を推定してCAN送信バッファに突っ込む
+    if(false){
+        detectEndPoint();
+    }
+
+    // TODO: 終了点推定
+    
 }
 
+// 開始点推定 (Return: 現在のheadが開始点かどうか)
+bool detectStartPoint(){
+    // n個取り出して、平均増加率がプラスかつデータの増加量が一定以上なら開始点と断定
+    const unsigned int sampleLength = 10; // 参照するサンプルの長さ
+    double aveDiff = 0.00; // 平均変化率
+    double offset = 0.00; // 増加量
+    const unsigned double border = 100; // 閾値(mV)
+
+    // TODO: initItem、可変長引数サポートしたい(embedBufferと互換切りしてCPPでクラスにしちまう手はある)
+    Item item, prevItem; // 現在参照しているアイテムと、その一つ前のアイテム
+    Item firstItem, lastItem; // 開始点検知に用いるサンプル範囲の最初と最後の一のアイテム
+    initItem(&item);
+    initItem(&prevItem);
+    initItem(&firstItem);
+    initItem(&lastItem);
+    
+    // サンプル範囲の最初と最後のアイテムを取得し、offsetを計算
+    getItemAt(B, 0, &firstItem);
+    getItemAt(B, sampleLength, &lastItem);
+    offset = lastItem.value - firstItem.value;
+
+    // 平均変化率を計算
+    for (unsigned int i = 0; i < sampleLength; i++){
+        getItemAt(B, i, &prevItem);
+        getItemAt(B, i + 1, &item);
+        double diff = item.value - prevItem.value;
+        aveDiff = (aveDiff + diff) / 2;
+    }
+
+    bool result = (aveDiff > 0) && (offset > border);
+    return result;
+}
+
+// 終了点推定 (Return: 終了点のheadから数えたインデックス)
+unsigned int detectEndPoint(){
+    // TODO: なんかうまくやる
+}
+
+// CANバッファ消化
+void sendCanBuffer(){
+    // TODO: バッファ作ってここでpopさせてcansendする
+    // TODO: CANライブラリ調達
+}
