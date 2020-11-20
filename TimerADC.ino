@@ -3,28 +3,40 @@
 */
 #include "ADCAccessor.h"
 #include "Buffer.h"
+#include <mcp_can.h>
+#include <SPI.h>
 
 // ADC定数
 #define PGA 1
 #define VREF 2.048
 #define ADS1220_CS_PIN    16
 #define ADS1220_DRDY_PIN  4
-#define BUFFER_SIZE 2000
+#define ADC_BUFFER_SIZE 2000
+#define CAN_BUFFER_SIZE 512
+
+#define DEVICE_ID 0x114 // デバイス識別子 可能ならスイッチかなんかで動的に設定したい
 
 // 割り込みベクタサイズ
 #define INTVECT_SIZE 5
 
-// --
+// インタフェース
 ADCAccessor adc(ADS1220_CS_PIN, ADS1220_DRDY_PIN);
-Buffer adcStreamBuffer, *B;
+MCP_CAN CAN0(5);
 hw_timer_t *bufTimer = NULL, *canTimer = NULL;
+
+// バッファ
+Buffer adcStreamBuffer, *B;
+Buffer canSendBuffer, *CB;
 
 // ユーザ定義割込み関数
 void dumpADCValue();
 void buffering();
-bool detectStartPoint();
 void sendCanBuffer();
-bool detectEndPoint();
+
+// functions
+bool detectStartPoint();
+int calcEndPoint();
+int initCANDevice();
 
 // 割込みテーブル
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
@@ -71,13 +83,21 @@ void setup(){
 
     // ADCストリームバッファ初期化
     B = &adcStreamBuffer;
-    initBuffer(B, BUFFER_SIZE);
+    initBuffer(B, ADC_BUFFER_SIZE);
 
     // ADCバッファリング割り込み(1ms)有効化
     bufTimer = timerBegin(0, 80, true);
     timerAttachInterrupt(bufTimer, &onBufTimer, true);
     timerAlarmWrite(bufTimer, 1000, true);
     timerAlarmEnable(bufTimer);
+    
+    // CANモジュール初期化
+    initCANDevice();
+    CAN0.setMode(MCP_NORMAL);
+
+    // CAN送信バッファ初期化
+    CB = &canSendBuffer;
+    initBuffer(CB, CAN_BUFFER_SIZE);
 
     // CAN送信バッファ消化部(1s)有効化
     canTimer = timerBegin(1, 80, true);
@@ -101,8 +121,16 @@ void loop(){
     // バッファロック後のバッファーフルを検知したら終了点推定
     if(buffer.isLocked && buffer.currentStatus == BUFFER_FULL){
         // 終了点が見つかったらCAN送信バッファに追加
-        if(detectEndPoint()){
-            // TODO: CANバッファ作る
+        int estimatedEP = calcEndPoint();
+        if(estimatedEP > 0){
+            Item dataItem;
+            initItem(&dataItem);
+            dataItem.index = DEVICE_ID;
+            dataItem.data = estimatedEP;
+            push(CB, dataItem);
+        }else{
+            // バッファをアンロック
+            unlockBuffer(B);
         }
     }
 }
@@ -123,7 +151,7 @@ void buffering(){
     // バッファに突っ込む
     Item item;
     initItem(*item);
-    item.value = volts; // TODO: Item構造体の中身どうする?
+    item.value = volts;
     pushStat = push(B, item);
 
     // 開始点を検知したらバッファをロック
@@ -169,9 +197,10 @@ bool detectStartPoint(){
 }
 
 // 終了点推定 (Return: 終了点のheadから数えたインデックス)
-unsigned int detectEndPoint(){
-    // n個取り出して、平均変化率がマイナスかつ一定以上低下していれば終了点と確定
-    const unsigned int sampleLength = 10; // 参照するサンプルの長さ
+int calcEndPoint(){
+    // n個取り出して、平均変化率がマイナスかつ一定以上低下していれば
+    // 低下し切った点を終了点とする
+    const unsigned int sampleLength = 4; // 参照するサンプルの長さ (多分5データ超えると普通に終了点超えちゃう)
     double aveDiff = 0.00; // 平均変化率
     double offset = 0.00; // 増加量
     const unsigned double border = -120; // 閾値(mV)
@@ -187,24 +216,52 @@ unsigned int detectEndPoint(){
     getItemAt(B, 0, &firstItem);
     getItemAt(B, sampleLength, &lastItem);
     offset = lastItem.value - firstItem.value;
+    
+    // バッファの範囲内で走査
+    int status = BUFFER_OK, indexOffset = 0;
+    while(status == BUFFER_OK){
+        for (unsigned int i = 0; i < sampleLength; i++){
+            // サンプル開始点から2つデータを拾ってきて
+            status = getItemAt(B, indexOffset + i, &prevItem);
+            status = getItemAt(B, indexOffset + i + 1, &item);
 
-    // 平均変化率を計算
-    for (unsigned int i = 0; i < sampleLength; i++){
-        getItemAt(B, i, &prevItem);
-        getItemAt(B, i + 1, &item);
-        double diff = item.value - prevItem.value;
-        aveDiff = (aveDiff + diff) / 2;
+            // まともに値が帰ってきたら微分して平均変化率を計算
+            if(status = BUFFER_OK){
+                double diff = item.value - prevItem.value;
+                aveDiff = (aveDiff + diff) / 2;
+            }else{
+                // バッファオーバーランしたらfor文を抜ける
+                break;
+            }
+        }
+        indexOffset++;
     }
 
-    // TODO: aveDiffデバッグ出力した方が良くない?
-    bool result = (aveDiff < 0) && (offset < border);
-    return result;
+    // indexOffset + sampleLengthの値 = 終了点
+    int endPoint = indexOffset + sampleLength;
 
+    // TODO: aveDiffデバッグ出力した方が良くない?
+
+    // indexOffsetがゼロ->まともに読めてない
+    if(indexOffset == 0){
+        return -1;
+    }else{
+        return endPoint;
+    }
 }
 
 // CANバッファ消化
 void sendCanBuffer(){
-    // TODO: バッファ作ってここでpopさせてcansendする
-    // TODO: CANライブラリ調達
+    // sendMsgBufにdouble型は流せないよー
+    // 共用体にしてuchar配列にしないと    
+    Item canItem;
+    initItem(&canItem);
+    if(pop(CB, &canItem) == BUFFER_OK){
+        unsigned char result = CAN0.sendMsgBuf(canItem.index, 0, 8, canItem.value);
+    }
 }
 
+// MCPモジュール初期化(0: success)
+int initCANDevice(){
+    return !(CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK);
+}
