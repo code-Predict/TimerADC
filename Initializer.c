@@ -30,6 +30,6 @@ int deinitBuffer(Buffer* buffer){
 }
 
 void initItem(Item* item){
-    item->id = 0xFF;
+    item->index = 0x00;
     item->value = 0;
 }

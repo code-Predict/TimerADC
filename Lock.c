@@ -9,4 +9,5 @@ void lockBuffer(Buffer *buffer){
 
 void unlockBuffer(Buffer *buffer){
     buffer->isLocked = 0;
+    buffer->currentIndex = 0; // バッファがアンロックされたらインデックスを初期化する
 }

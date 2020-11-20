@@ -28,7 +28,7 @@ extern "C" {
 
 /* -------- */
 typedef struct item {
-    int id;
+    int index;
     double value;
 } Item;
 
@@ -39,6 +39,8 @@ typedef struct buffer {
     int tail;
     unsigned int size;
     unsigned int isLocked; // 0以外の値を代入するとバッファがロックされる
+    int currentStatus; // 最後にバッファを操作した時の状態値
+    unsigned int currentIndex; // 最後にpushしたアイテムのインデックス
 } Buffer;
 
 /* -------- */
@@ -47,11 +49,6 @@ typedef struct buffer {
 int initBuffer(Buffer* buffer, unsigned int length);
 int deinitBuffer(Buffer* buffer);
 void initItem(Item *item);
-
-// Dump.c
-void dumpItem(Item *item, char* strBuffer);
-void dumpBuffer(Buffer *buffer, char* strBuffer);
-void dumpu8Array(uint8_t *data, int length, char *strBuffer);
 
 // Operate.c
 int push(Buffer* buffer, Item item);

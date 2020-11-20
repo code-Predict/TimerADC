@@ -97,7 +97,14 @@ void loop(){
             portEXIT_CRITICAL(&timerMux);
         }
     }
-    
+
+    // バッファロック後のバッファーフルを検知したら終了点推定
+    if(buffer.isLocked && buffer.currentStatus == BUFFER_FULL){
+        // 終了点が見つかったらCAN送信バッファに追加
+        if(detectEndPoint()){
+            // TODO: CANバッファ作る
+        }
+    }
 }
 
 // AD変換終了時
@@ -122,16 +129,10 @@ void buffering(){
     // 開始点を検知したらバッファをロック
     if(detectStartPoint()){
         lockBuffer(B);
-    }
-
-    // pushできなくなったら終了点を推定してCAN送信バッファに突っ込む
-    if(false){
-        detectEndPoint();
-    }
-
-    // TODO: 終了点推定
-    
+    }    
 }
+
+// TODO: 開始点と終了点の関数ほとんど同じじゃない? 比較部だけ関数化して分けちゃって良くねえか
 
 // 開始点推定 (Return: 現在のheadが開始点かどうか)
 bool detectStartPoint(){
@@ -139,7 +140,7 @@ bool detectStartPoint(){
     const unsigned int sampleLength = 10; // 参照するサンプルの長さ
     double aveDiff = 0.00; // 平均変化率
     double offset = 0.00; // 増加量
-    const unsigned double border = 100; // 閾値(mV)
+    const unsigned double border = 300; // 閾値(mV)
 
     // TODO: initItem、可変長引数サポートしたい(embedBufferと互換切りしてCPPでクラスにしちまう手はある)
     Item item, prevItem; // 現在参照しているアイテムと、その一つ前のアイテム
@@ -162,13 +163,43 @@ bool detectStartPoint(){
         aveDiff = (aveDiff + diff) / 2;
     }
 
+    // TODO: aveDiffデバッグ出力した方が良くない?
     bool result = (aveDiff > 0) && (offset > border);
     return result;
 }
 
 // 終了点推定 (Return: 終了点のheadから数えたインデックス)
 unsigned int detectEndPoint(){
-    // TODO: なんかうまくやる
+    // n個取り出して、平均変化率がマイナスかつ一定以上低下していれば終了点と確定
+    const unsigned int sampleLength = 10; // 参照するサンプルの長さ
+    double aveDiff = 0.00; // 平均変化率
+    double offset = 0.00; // 増加量
+    const unsigned double border = -120; // 閾値(mV)
+
+    Item item, prevItem; // 現在参照しているアイテムと、その一つ前のアイテム
+    Item firstItem, lastItem; // 開始点検知に用いるサンプル範囲の最初と最後の一のアイテム
+    initItem(&item);
+    initItem(&prevItem);
+    initItem(&firstItem);
+    initItem(&lastItem);
+    
+    // サンプル範囲の最初と最後のアイテムを取得し、offsetを計算
+    getItemAt(B, 0, &firstItem);
+    getItemAt(B, sampleLength, &lastItem);
+    offset = lastItem.value - firstItem.value;
+
+    // 平均変化率を計算
+    for (unsigned int i = 0; i < sampleLength; i++){
+        getItemAt(B, i, &prevItem);
+        getItemAt(B, i + 1, &item);
+        double diff = item.value - prevItem.value;
+        aveDiff = (aveDiff + diff) / 2;
+    }
+
+    // TODO: aveDiffデバッグ出力した方が良くない?
+    bool result = (aveDiff < 0) && (offset < border);
+    return result;
+
 }
 
 // CANバッファ消化
@@ -176,3 +207,4 @@ void sendCanBuffer(){
     // TODO: バッファ作ってここでpopさせてcansendする
     // TODO: CANライブラリ調達
 }
+
