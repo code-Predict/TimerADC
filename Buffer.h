@@ -33,14 +33,19 @@ typedef struct item {
 } Item;
 
 typedef struct buffer {
-    // Data
-    Item *data;
+    // インデックス変数
     int head;
     int tail;
-    unsigned int size;
+
+    // 状態変数
+    unsigned int size; // バッファのサイズ
+    unsigned int usedSize; // 使用済みのサイズ(=push回数-pop回数)
     unsigned int isLocked; // 0以外の値を代入するとバッファがロックされる
-    int currentStatus; // 最後にバッファを操作した時の状態値
-    unsigned int currentIndex; // 最後にpushしたアイテムのインデックス
+    int currentStatus; // 最後にバッファを操作した時の状態
+
+    // 本体
+    Item *data;
+
 } Buffer;
 
 /* -------- */
