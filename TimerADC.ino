@@ -6,8 +6,8 @@
 // ADC定数
 #define PGA 1
 #define VREF 2.048
-#define ADS1220_CS_PIN   16
-#define ADS1220_DRDY_PIN 4
+#define ADS1120_CS_PIN   16
+#define ADS1120_DRDY_PIN 4
 #define ADC_BUFFER_SIZE 100
 
 // 割り込みベクタサイズ
@@ -62,8 +62,11 @@ void setup(){
     pinMode(32, OUTPUT);
 
     // ADC初期化
-    adc.begin(DR_1000SPS, PGA_GAIN_1, MUX_AIN0_AIN1);
-    attachInterrupt(ADS1220_DRDY_PIN, &onDataReady, FALLING);
+    adc.begin(DR_1000SPS, MUX_AIN0_AVSS); // 1000SPS, AIN0とAVSSのシングルエンド
+    adc.setGain(ADCACCESSOR_GAIN_DISABLED); // PGA無効
+    adc.setConvMode(ADCACCESSOR_CONTINUOUS); // 継続変換モード
+    adc.startConv(); // 変換開始
+    attachInterrupt(ADS1120_DRDY_PIN, &onDataReady, FALLING); // DRDYの立下りに割り込み設定
 
     // ADCストリームバッファ初期化
     B = &adcStreamBuffer;
