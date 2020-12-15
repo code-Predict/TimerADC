@@ -2,6 +2,7 @@
  * タイマ割込みでADCをいじる
 */
 #include "Buffer.h"
+#include "ADCAccessor.h"
 
 // ADC定数
 #define PGA 1
@@ -12,6 +13,10 @@
 
 // 割り込みベクタサイズ
 #define INTVECT_SIZE 5
+
+// インタフェース
+ADCAccessor adc(ADS1120_CS_PIN, ADS1120_DRDY_PIN);
+hw_timer_t *timer = NULL;
 
 // ユーザ定義割込み関数
 void dumpADCValue();
@@ -68,6 +73,14 @@ void setup(){
     adc.startConv(); // 変換開始
     attachInterrupt(ADS1120_DRDY_PIN, &onDataReady, FALLING); // DRDYの立下りに割り込み設定
 
+    // タイマ割り込み(1ms)設定
+    timer = timerBegin(0, 80, true);
+    timerAttachInterrupt(timer, &onBufTimer, true);
+    timerAlarmWrite(timer, 1000, true);
+    timerAlarmEnable(timer);
+
+/*
+
     // ADCストリームバッファ初期化
     B = &adcStreamBuffer;
     initBuffer(B, ADC_BUFFER_SIZE);
@@ -77,6 +90,7 @@ void setup(){
     timerAttachInterrupt(bufTimer, &onBufTimer, true);
     timerAlarmWrite(bufTimer, 1000, true);
     timerAlarmEnable(bufTimer);
+*/
 }
 
 void loop(){
@@ -91,6 +105,8 @@ void loop(){
         }
     }
 
+    /*
+
     // バッファがロックされていて、バッファフルを検知したら
     if(buffer.isLocked && buffer.currentStatus == BUFFER_OVER){
         // 終了点推定してブレーキ時間に変換し、
@@ -102,6 +118,8 @@ void loop(){
         // アンロック
         unlockBuffer(B);
     }
+
+    */
 
 }
 
@@ -117,7 +135,9 @@ void buffering(){
 
     // 電圧を計算して
     float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
+    Serial.println(volts); // シリアルに吐き出す
 
+/*
     // バッファに突っ込む
     Item item;
     initItem(*item);
@@ -128,6 +148,7 @@ void buffering(){
     if(B->isLocked == 0 && detectStartPoint(B, 4, 17, 2)){
         lockBuffer(B);
     }
+*/
 }
 
 /// 測定開始点を推定する。
@@ -176,8 +197,8 @@ int getEndPoint(Buffer *B, int nSense){
     Buffer diff, bydiff, *Diff, *Bydiff;
     Diff = &diff;
     Bydiff = &bydiff;
-    initBuffer(Diff, BUFFER_SIZE);
-    initBuffer(Bydiff, BUFFER_SIZE);
+    initBuffer(Diff, ADC_BUFFER_SIZE);
+    initBuffer(Bydiff, ADC_BUFFER_SIZE);
 
     // 二階微分
     getDiff(B, Diff);
@@ -189,7 +210,7 @@ int getEndPoint(Buffer *B, int nSense){
     getItemAt(Bydiff, 0, &item);
     double tmp = item.value;
     int minValue = -1;
-    for (int i = 0; i < BUFFER_SIZE; i++){
+    for (int i = 0; i < ADC_BUFFER_SIZE; i++){
         initItem(&item);
         getItemAt(Bydiff, i, &item);
         // 前の値より小さく, nSenseは下回らない -> minValue
