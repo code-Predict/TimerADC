@@ -5,18 +5,24 @@
 #include "ADCAccessor.h"
 #include "Prediction.h"
 
-// ADC定数
+// constants
 #define PGA 1
 #define VREF 2.048
+
 #define ADS1120_CS_PIN   16
 #define ADS1120_DRDY_PIN 4
+
 #define ADC_BUFFER_SIZE 100
+
+#define MCP2515_CS_PIN 6 //TODO: 直す
+#define MCP2515_INT_PIN 6
 
 // 割り込みベクタサイズ
 #define INTVECT_SIZE 5
 
 // インタフェース
 ADCAccessor adc(ADS1120_CS_PIN, ADS1120_DRDY_PIN);
+CANAccessor can(MCP2515_CS_PIN);
 hw_timer_t *timer = NULL, *bufTimer = NULL;
 
 // バッファ
@@ -84,6 +90,7 @@ void setup(){
     timerAlarmEnable(bufTimer);
 
     // CAN初期化
+    can.begin();
     
 }
 
@@ -100,7 +107,7 @@ void loop(){
     }
 
     // バッファがロックされていて、バッファフルを検知したら
-    if(buffer.isLocked && buffer.currentStatus == BUFFER_OVER){
+    if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_OVER){
         // 終了点推定してブレーキ時間に変換し、
         int endPoint = getEndPoint(B, -20);
 
