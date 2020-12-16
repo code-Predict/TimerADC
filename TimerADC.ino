@@ -128,7 +128,7 @@ void buffering(){
 
     // バッファに突っ込む
     Item item;
-    initItem(*item);
+    initItem(&item);
     item.value = volts;
     pushStat = push(B, item);
 

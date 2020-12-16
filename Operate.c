@@ -67,13 +67,6 @@ int pop(Buffer *buffer, Item *item){
     return buffer->currentStatus;
 }
 
-/// バッファのサイズを取得する。
-///  - Parameters:
-///     - buffer* : 対象のバッファ
-unsigned int getBufSize(Buffer *B){
-    return B->size - 1;
-}
-
 /// バッファから非破壊でデータを取り出す。
 ///  - Parameters:
 ///     - buffer* : 対象のバッファ

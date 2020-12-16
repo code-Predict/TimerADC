@@ -59,7 +59,6 @@ void initItem(Item *item);
 int push(Buffer* buffer, Item item);
 int pop(Buffer* buffer, Item* item);
 int getItemAt(Buffer* buffer, unsigned int advanced, Item* item);
-unsigned int getBufSize(Buffer* B);
 
 // Lock.c
 void lockBuffer(Buffer *buffer);
