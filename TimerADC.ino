@@ -3,7 +3,10 @@
 */
 #include "Buffer.h"
 #include "ADCAccessor.h"
+#include "CANAccessor.h"
 #include "Prediction.h"
+
+#define DEBUG
 
 // constants
 #define PGA 1
@@ -22,7 +25,7 @@
 
 // インタフェース
 ADCAccessor adc(ADS1120_CS_PIN, ADS1120_DRDY_PIN);
-CANAccessor can(MCP2515_CS_PIN);
+CANAccessor can(MCP2515_CS_PIN, MCP2515_INT_PIN);
 hw_timer_t *timer = NULL, *bufTimer = NULL;
 
 // バッファ
@@ -90,7 +93,7 @@ void setup(){
     timerAlarmEnable(bufTimer);
 
     // CAN初期化
-    can.begin();
+    // can.begin();
     
 }
 
@@ -106,6 +109,8 @@ void loop(){
         }
     }
 
+    #ifndef DEBUG
+
     // バッファがロックされていて、バッファフルを検知したら
     if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_OVER){
         // 終了点推定してブレーキ時間に変換し、
@@ -117,6 +122,9 @@ void loop(){
         // アンロック
         unlockBuffer(B);
     }
+
+    #endif
+
 }
 
 // AD変換終了時
@@ -131,7 +139,12 @@ void buffering(){
 
     // 電圧を計算して
     float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
+
+    #ifdef DEBUG
+
     Serial.println(volts); // シリアルに吐き出す
+
+    #else
 
     // バッファに突っ込む
     Item item;
@@ -143,4 +156,6 @@ void buffering(){
     if(B->isLocked == 0 && detectStartPoint(B, 4, 17, 2)){
         lockBuffer(B);
     }
+    
+    #endif
 }
