@@ -33,11 +33,7 @@ void popCANBuffer();
 // インタフェース
 ADCAccessor adc(ADS1120_CS_PIN, ADS1120_DRDY_PIN);
 CANAccessor can(MCP2515_CS_PIN, MCP2515_INT_PIN);
-<<<<<<< HEAD
-hw_timer_t *timer = NULL, *bufTimer = NULL;
-=======
 hw_timer_t *timer = NULL, *bufTimer = NULL, *canSendTimer = NULL;
->>>>>>> 525da29c56ba0fd48f2954a93f19f8ec16f58856
 
 // バッファ
 Buffer *B, adcStreamBuffer;
@@ -101,10 +97,6 @@ void setup(){
     timerAlarmWrite(bufTimer, 1000, true);
 
     // CAN初期化
-<<<<<<< HEAD
-    // can.begin();
-    
-=======
     if(can.begin(MCP_ANY, CAN_100KBPS, MCP_16MHZ) == CAN_OK){
         can.setMode(MCP_NORMAL);
     }else{
@@ -125,7 +117,6 @@ void setup(){
     // タイマ起動
     timerAlarmEnable(bufTimer);
     timerAlarmEnable(canSendTimer);
->>>>>>> 525da29c56ba0fd48f2954a93f19f8ec16f58856
 }
 
 void loop(){
@@ -140,15 +131,8 @@ void loop(){
         }
     }
 
-<<<<<<< HEAD
-    #ifndef DEBUG
-
-    // バッファがロックされていて、バッファフルを検知したら
-    if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_OVER){
-=======
     // バッファがロックされてから一定回数pushしたら
     if(adcStreamBuffer.isLocked && pushCnt > 100){
->>>>>>> 525da29c56ba0fd48f2954a93f19f8ec16f58856
         // 終了点推定してブレーキ時間に変換し、
         int endPoint = getEndPoint(B, -20);
         float breakTime = endPoint;
