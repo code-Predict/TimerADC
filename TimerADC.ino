@@ -4,7 +4,8 @@
 #include "Buffer.h"
 #include "ADCAccessor.h"
 #include "CANAccessor.h"
-#include "Prediction.h"
+
+#include "Prediction.h" // 推定関数の分割先
 
 #define DEBUG
 
@@ -16,6 +17,7 @@
 #define ADS1120_DRDY_PIN 4
 
 #define ADC_BUFFER_SIZE 100
+#define CAN_BUFFER_SIZE 10
 
 #define MCP2515_CS_PIN 6 //TODO: 直す
 #define MCP2515_INT_PIN 6
@@ -23,18 +25,27 @@
 // 割り込みベクタサイズ
 #define INTVECT_SIZE 5
 
+// タイマ割り込み関数
+void dumpADCValue();
+void buffering();
+void popCANBuffer();
+
 // インタフェース
 ADCAccessor adc(ADS1120_CS_PIN, ADS1120_DRDY_PIN);
 CANAccessor can(MCP2515_CS_PIN, MCP2515_INT_PIN);
+<<<<<<< HEAD
 hw_timer_t *timer = NULL, *bufTimer = NULL;
+=======
+hw_timer_t *timer = NULL, *bufTimer = NULL, *canSendTimer = NULL;
+>>>>>>> 525da29c56ba0fd48f2954a93f19f8ec16f58856
 
 // バッファ
 Buffer *B, adcStreamBuffer;
 Buffer *CB, canSendBuffer;
+unsigned int pushCnt = 0; // push回数
 
-// ユーザ定義割込み関数
-void dumpADCValue();
-void buffering();
+// ハードウェア固有ID
+uint8_t deviceID[6]; // setupで代入
 
 // 割込みテーブル
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
@@ -43,7 +54,7 @@ void nopVect();
 void (*intVect[])() = {
     dumpADCValue,
     buffering,
-    nopVect,
+    popCANBuffer,
     nopVect,
     nopVect
 };
@@ -73,8 +84,6 @@ void IRAM_ATTR onCanTimer(){
 void setup(){
     Serial.begin(115200);
 
-    pinMode(32, OUTPUT);
-
     // ADC初期化
     adc.begin(DR_1000SPS, MUX_AIN0_AVSS); // 1000SPS, AIN0とAVSSのシングルエンド
     adc.setGain(ADCACCESSOR_GAIN_DISABLED); // PGA無効
@@ -90,11 +99,33 @@ void setup(){
     bufTimer = timerBegin(0, 80, true);
     timerAttachInterrupt(bufTimer, &onBufTimer, true);
     timerAlarmWrite(bufTimer, 1000, true);
-    timerAlarmEnable(bufTimer);
 
     // CAN初期化
+<<<<<<< HEAD
     // can.begin();
     
+=======
+    if(can.begin(MCP_ANY, CAN_100KBPS, MCP_16MHZ) == CAN_OK){
+        can.setMode(MCP_NORMAL);
+    }else{
+        Serial.println("!!!CAUTION!!! CAN device couldn't initialize!!");
+    }
+
+    // CAN送信バッファ初期化
+    CB = &canSendBuffer;
+    initBuffer(CB, CAN_BUFFER_SIZE);
+
+    canSendTimer = timerBegin(1, 80, true);
+    timerAttachInterrupt(canSendTimer, &onCanTimer, true);
+    timerAlarmWrite(canSendTimer, 1E+6, true); // ここは遅くてもいいと思う
+
+    // デバイス固有ID取得
+    getDeviceID(deviceID);
+
+    // タイマ起動
+    timerAlarmEnable(bufTimer);
+    timerAlarmEnable(canSendTimer);
+>>>>>>> 525da29c56ba0fd48f2954a93f19f8ec16f58856
 }
 
 void loop(){
@@ -109,23 +140,33 @@ void loop(){
         }
     }
 
+<<<<<<< HEAD
     #ifndef DEBUG
 
     // バッファがロックされていて、バッファフルを検知したら
     if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_OVER){
+=======
+    // バッファがロックされてから一定回数pushしたら
+    if(adcStreamBuffer.isLocked && pushCnt > 100){
+>>>>>>> 525da29c56ba0fd48f2954a93f19f8ec16f58856
         // 終了点推定してブレーキ時間に変換し、
         int endPoint = getEndPoint(B, -20);
+        float breakTime = endPoint;
 
         // CAN送信バッファに送りつける
-
+        Item item;
+        item.value = breakTime;
+        push(CB, item);
 
         // アンロック
         unlockBuffer(B);
+        pushCnt = 0;
     }
 
     #endif
 
 }
+
 
 // AD変換終了時
 void dumpADCValue(){
@@ -152,10 +193,61 @@ void buffering(){
     item.value = volts;
     pushStat = push(B, item);
 
+    // ロックされていれば加算
+    if(B->isLocked){
+        pushCnt++;
+    }
+
     // 開始点を検知したらバッファをロック
     if(B->isLocked == 0 && detectStartPoint(B, 4, 17, 2)){
         lockBuffer(B);
     }
     
     #endif
+}
+
+// CAN送信バッファ消化
+void popCANBuffer(){
+    // バッファから値をもらってくる
+    Item item;
+    initItem(&item);
+    int status = pop(CB, &item);
+    if(status == BUFFER_EMPTY){
+        return;
+    }
+
+    // デバイスID取得して
+    uint8_t deviceID[6];
+    getDeviceID(deviceID);
+
+    // CANメッセージを作って
+    union CANDataFrame {
+        struct Message {
+            uint8_t partialDeviceID[4];
+            float breakTime;
+        } message;
+        uint8_t rawValue[8];
+    };
+
+    CANDataFrame dataFrame;
+    dataFrame.message.breakTime = item.value;    
+    memcpy(dataFrame.message.partialDeviceID, deviceID, 4);
+
+    // 投げる
+    int result = can.sendFrame(deviceID[0], dataFrame.rawValue, 8);
+    if(result != CAN_OK){
+        Serial.println("Failed to send can frame.");
+    }
+}
+
+// デバイスID取得
+void getDeviceID(uint8_t *id){
+    // 電源投入以降更新しない
+    static bool isRead = false;
+    static unsigned char internalID[6];
+    if(!isRead){
+        esp_efuse_mac_get_default(internalID);
+        isRead = true;
+    }
+    id = internalID;
 }
