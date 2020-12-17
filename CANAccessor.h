@@ -13,6 +13,6 @@ class CANAccessor{
         CANAccessor(byte csPin, byte intpin);
         int begin(uint8_t mode, uint8_t speedRate, uint8_t clockFreq);
         void setMode(uint8_t mode);
-        int send(uint32_t id, uint8_t *data, uint8_t length);
-        int recv(uint32_t *id, uint8_t *data, uint8_t *length);
+        int sendFrame(uint32_t id, uint8_t *data, uint8_t length);
+        int recvFrame(uint32_t *id, uint8_t *data, uint8_t *length);
 };

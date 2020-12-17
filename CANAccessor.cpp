@@ -35,7 +35,7 @@ void CANAccessor::setMode(uint8_t mode){
 ///     - data: 送信フレーム
 ///     - length: フレーム長
 ///  - Return: 送信結果
-int CANAccessor::send(uint32_t id, uint8_t *data, uint8_t length){
+int CANAccessor::sendFrame(uint32_t id, uint8_t *data, uint8_t length){
     return this->can->sendMsgBuf(id, 0, length, data);
 }
 
@@ -45,6 +45,6 @@ int CANAccessor::send(uint32_t id, uint8_t *data, uint8_t length){
 ///     - data: 送信フレーム
 ///     - length: フレーム長
 ///  - Return: 未定
-int CANAccessor::recv(uint32_t *id, uint8_t *data, uint8_t *length){
+int CANAccessor::recvFrame(uint32_t *id, uint8_t *data, uint8_t *length){
     return 0;
 }
