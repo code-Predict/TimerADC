@@ -8,7 +8,7 @@
 
 // constants
 #define PGA 1
-#define VREF 1.65
+#define VREF 3.3
 
 #define ADS1120_CS_PIN   16
 #define ADS1120_DRDY_PIN 4
@@ -76,6 +76,7 @@ void setup(){
     adc.begin(DR_1000SPS, MUX_AIN0_AVSS); // 1000SPS, AIN0とAVSSのシングルエンド
     adc.setGain(ADCACCESSOR_GAIN_DISABLED); // PGA無効
     adc.setConvMode(ADCACCESSOR_CONTINUOUS); // 継続変換モード
+    adc.setReference(ADCACCESSOR_REF_AVDD); // AVDD-AVSS間をリファレンス電圧として使用
     adc.startConv(); // 変換開始
     attachInterrupt(ADS1120_DRDY_PIN, &onDataReady, FALLING); // DRDYの立下りに割り込み設定
 
@@ -143,12 +144,12 @@ void buffering(){
     static unsigned int pushStat = BUFFER_OK;
 
     // 電圧を計算して
-    float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
+    float volts = (float)((adc.getADCValue() * VREF * 1000) / (((long int)1<<23)-1));
 
     // バッファに突っ込む
     Item item;
     initItem(&item);
-    item.value = volts - (VREF / 2);
+    item.value = volts - (VREF / 2) * 1000; // INA253A3はVREFを中心に動くので減算
     pushStat = push(B, item);
 
     // ロックされていれば加算
@@ -170,19 +171,10 @@ void dumpBuffer(Buffer *B){
     Item item;
     initItem(&item);
 
-    // 平均値を求めながらバッファを吐き出す
-    getItemAt(B, 0, &item);
-    double average = item.value;
-
     while(status == BUFFER_OK){
         status = getItemAt(B, idx, &item);
         if(status == BUFFER_OK){
-            average = ((average + item.value) / 2);
-            Serial.print("RawValue:");
-            Serial.print(item.value);
-            Serial.print("\t");
-            Serial.print("Average:");
-            Serial.println(average);
+            Serial.println((item.value / 400.0) * 1000);
             idx++;
         }
     }

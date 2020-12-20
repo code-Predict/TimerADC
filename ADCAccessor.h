@@ -8,6 +8,11 @@
 #define ADCACCESSOR_CONTINUOUS 1
 #define ADCACCESSOR_GAIN_DISABLED -1
 
+#define ADCACCESSOR_REF_INTERNAL 0x00
+#define ADCACCESSOR_REF_REF0 0x01
+#define ADCACCESSOR_REF_REF1 0x02
+#define ADCACCESSOR_REF_AVDD 0x03
+
 class ADCAccessor{
     private:
         int DRDYpin, CSpin;
@@ -19,6 +24,7 @@ class ADCAccessor{
         void begin(uint8_t speedRate, uint8_t mux);
         void setGain(int gain);
         void setConvMode(int mode);
+        void setReference(uint8_t ref);
         void startConv();
 
         float getADCValue();
