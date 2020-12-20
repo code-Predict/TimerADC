@@ -8,7 +8,7 @@
 
 // constants
 #define PGA 1
-#define VREF 2.048
+#define VREF 1.65
 
 #define ADS1120_CS_PIN   16
 #define ADS1120_DRDY_PIN 4
@@ -23,6 +23,7 @@
 // タイマ割り込み関数
 void dumpADCValue();
 void buffering();
+void bufLockInterrupt();
 
 void dumpBuffer(Buffer *B);
 
@@ -41,7 +42,7 @@ void nopVect();
 void (*intVect[])() = {
     dumpADCValue,
     buffering,
-    nopVect,
+    bufLockInterrupt,
     nopVect,
     nopVect
 };
@@ -58,6 +59,13 @@ void IRAM_ATTR onDataReady() {
 void IRAM_ATTR onBufTimer(){
     portENTER_CRITICAL_ISR(&timerMux);
     interruptCounter[1]++;
+    portEXIT_CRITICAL_ISR(&timerMux);
+}
+
+// ISR 2: バッファロック割り込み
+void IRAM_ATTR onBufLock(){
+    portENTER_CRITICAL_ISR(&timerMux);
+    interruptCounter[2]++;
     portEXIT_CRITICAL_ISR(&timerMux);
 }
 
@@ -84,7 +92,8 @@ void setup(){
     timerAlarmEnable(bufTimer);
 
     // バッファロック割り込み有効化
-    attachInterrupt(BUFFER_LOCK_PIN, &bufLockInterrupt, FALLING);
+    pinMode(BUFFER_LOCK_PIN, INPUT_PULLUP);
+    attachInterrupt(BUFFER_LOCK_PIN, &onBufLock, FALLING);
 }
 
 void loop(){
@@ -100,7 +109,7 @@ void loop(){
     }
 
     // バッファがロックされてからバッファがいっぱいになったら
-    if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_OVER){
+    if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_FULL){
         // シリアルに吐き出してアンロック
         dumpBuffer(B);
         unlockBuffer(B);
@@ -108,8 +117,18 @@ void loop(){
 
 }
 
-// バッファロック割り込み時
+// BUFLOCKピン立下り
 void bufLockInterrupt(){
+    // 全てpopして、
+    int status = BUFFER_OK;
+    while(status == BUFFER_OK){
+        Item item;
+        status = pop(B, &item);
+    }
+
+    Serial.println("!!");
+
+    // ロック
     lockBuffer(B);
 }
 
@@ -129,7 +148,7 @@ void buffering(){
     // バッファに突っ込む
     Item item;
     initItem(&item);
-    item.value = volts;
+    item.value = volts - (VREF / 2);
     pushStat = push(B, item);
 
     // ロックされていれば加算
@@ -150,10 +169,20 @@ void dumpBuffer(Buffer *B){
     int status = BUFFER_OK, idx = 0;
     Item item;
     initItem(&item);
+
+    // 平均値を求めながらバッファを吐き出す
+    getItemAt(B, 0, &item);
+    double average = item.value;
+
     while(status == BUFFER_OK){
         status = getItemAt(B, idx, &item);
         if(status == BUFFER_OK){
-            Serial.println(item.value);
+            average = ((average + item.value) / 2);
+            Serial.print("RawValue:");
+            Serial.print(item.value);
+            Serial.print("\t");
+            Serial.print("Average:");
+            Serial.println(average);
             idx++;
         }
     }
