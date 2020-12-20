@@ -49,6 +49,25 @@ void ADCAccessor::setConvMode(int mode){
     }
 }
 
+/// リファレンス電圧設定
+///  - Parameters:
+///     - ref:リファレンス電圧(定数: ADCACCESSOR_REF_XXX)
+void ADCAccessor::setReference(uint8_t ref){
+    // レジスタの値を取得
+    uint8_t reg2Value = pc_ads1220.readRegister(CONFIG_REG2_ADDRESS);
+
+    // 上位2bitに持っていく
+    uint8_t refValue = ref << 6;
+
+    // クリアしてアサート
+    reg2Value &= 0x3F;
+    reg2Value |= refValue;
+
+    // 設定
+    pc_ads1220.writeRegister(CONFIG_REG2_ADDRESS, reg2Value);
+
+}
+
 /// AD変換開始
 void ADCAccessor::startConv(){
     pc_ads1220.Start_Conv();

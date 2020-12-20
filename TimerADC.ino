@@ -11,7 +11,7 @@
 
 // constants
 #define PGA 1
-#define VREF 2.048
+#define VREF 1.65
 
 #define ADS1120_CS_PIN   16
 #define ADS1120_DRDY_PIN 4
@@ -84,6 +84,7 @@ void setup(){
     adc.begin(DR_1000SPS, MUX_AIN0_AVSS); // 1000SPS, AIN0とAVSSのシングルエンド
     adc.setGain(ADCACCESSOR_GAIN_DISABLED); // PGA無効
     adc.setConvMode(ADCACCESSOR_CONTINUOUS); // 継続変換モード
+    adc.setReference(ADCACCESSOR_REF_AVDD); // AVDD-AVSS間をリファレンス電圧とする
     adc.startConv(); // 変換開始
     attachInterrupt(ADS1120_DRDY_PIN, &onDataReady, FALLING); // DRDYの立下りに割り込み設定
 
@@ -146,9 +147,6 @@ void loop(){
         unlockBuffer(B);
         pushCnt = 0;
     }
-
-    #endif
-
 }
 
 
