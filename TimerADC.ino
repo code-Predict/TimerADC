@@ -10,14 +10,14 @@
 #define DEBUG
 
 // constants
-#define PGA 1
-#define VREF 1.65
+#define VREF 3.3
 
 #define ADS1120_CS_PIN   16
 #define ADS1120_DRDY_PIN 4
 
-#define ADC_BUFFER_SIZE 100
-#define CAN_BUFFER_SIZE 10
+#define BUFFER_LOCK_PIN 25 // このピンが立ち下がるとバッファがロックされる  
+
+#define ADC_BUFFER_SIZE 2000
 
 #define MCP2515_CS_PIN 5
 #define MCP2515_INT_PIN 17 // TODO: まだ結線してない(1220(日))
@@ -28,20 +28,18 @@
 // タイマ割り込み関数
 void dumpADCValue();
 void buffering();
-void popCANBuffer();
+void bufLockInterrupt();
+
+void dumpBufferViaCAN(Buffer *B);
+int sendCANDoubleValue(CANAccessor can, double value);
 
 // インタフェース
 ADCAccessor adc(ADS1120_CS_PIN, ADS1120_DRDY_PIN);
 CANAccessor can(MCP2515_CS_PIN, MCP2515_INT_PIN);
-hw_timer_t *timer = NULL, *bufTimer = NULL, *canSendTimer = NULL;
+hw_timer_t *timer = NULL, *bufTimer = NULL;
 
 // バッファ
 Buffer *B, adcStreamBuffer;
-Buffer *CB, canSendBuffer;
-unsigned int pushCnt = 0; // push回数
-
-// ハードウェア固有ID
-uint8_t deviceID[6]; // setupで代入
 
 // 割込みテーブル
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
@@ -50,7 +48,7 @@ void nopVect();
 void (*intVect[])() = {
     dumpADCValue,
     buffering,
-    popCANBuffer,
+    bufLockInterrupt,
     nopVect,
     nopVect
 };
@@ -70,8 +68,8 @@ void IRAM_ATTR onBufTimer(){
     portEXIT_CRITICAL_ISR(&timerMux);
 }
 
-// ISR 2: CANバッファ消化
-void IRAM_ATTR onCanTimer(){
+// ISR 2: バッファロック割り込み
+void IRAM_ATTR onBufLock(){
     portENTER_CRITICAL_ISR(&timerMux);
     interruptCounter[2]++;
     portEXIT_CRITICAL_ISR(&timerMux);
@@ -104,20 +102,12 @@ void setup(){
         Serial.println("!!!CAUTION!!! CAN device couldn't initialize!!");
     }
 
-    // CAN送信バッファ初期化
-    CB = &canSendBuffer;
-    initBuffer(CB, CAN_BUFFER_SIZE);
-
-    canSendTimer = timerBegin(1, 80, true);
-    timerAttachInterrupt(canSendTimer, &onCanTimer, true);
-    timerAlarmWrite(canSendTimer, 1E+6, true); // ここは遅くてもいいと思う
-
-    // デバイス固有ID取得
-    getDeviceID(deviceID);
-
     // タイマ起動
     timerAlarmEnable(bufTimer);
-    timerAlarmEnable(canSendTimer);
+
+    // バッファロック割り込み有効化
+    pinMode(BUFFER_LOCK_PIN, INPUT_PULLUP);
+    attachInterrupt(BUFFER_LOCK_PIN, &onBufLock, FALLING);
 }
 
 void loop(){
@@ -132,23 +122,28 @@ void loop(){
         }
     }
 
-    // バッファがロックされてから一定回数pushしたら
-    if(adcStreamBuffer.isLocked && pushCnt > 100){
-        // 終了点推定してブレーキ時間に変換し、
-        int endPoint = getEndPoint(B, -20);
-        float breakTime = endPoint;
-
-        // CAN送信バッファに送りつける
-        Item item;
-        item.value = breakTime;
-        push(CB, item);
-
-        // アンロック
+    // バッファがロックされてからバッファがいっぱいになったら
+    if(adcStreamBuffer.isLocked && adcStreamBuffer.currentStatus == BUFFER_FULL){
+        // CAN経由で吐き出してアンロック
+        dumpBufferViaCAN(B);
         unlockBuffer(B);
-        pushCnt = 0;
     }
 }
 
+// BUFLOCKピン立下り
+void bufLockInterrupt(){
+    // 全てpopして、
+    int status = BUFFER_OK;
+    while(status == BUFFER_OK){
+        Item item;
+        status = pop(B, &item);
+    }
+
+    Serial.println("!!");
+
+    // ロック
+    lockBuffer(B);
+}
 
 // AD変換終了時
 void dumpADCValue(){
@@ -161,20 +156,15 @@ void buffering(){
     static unsigned int pushStat = BUFFER_OK;
 
     // 電圧を計算して
-    float volts = (float)((adc.getADCValue() * VREF/PGA * 1000) / (((long int)1<<23)-1));
-
-    #ifdef DEBUG
-
-    Serial.println(volts); // シリアルに吐き出す
-
-    #else
+    float volts = (float)((adc.getADCValue() * VREF * 1000) / (((long int)1<<23)-1));
 
     // バッファに突っ込む
     Item item;
     initItem(&item);
-    item.value = volts;
+    item.value = volts - (VREF / 2) * 1000; // INA253A3はVREFを中心に動くので減算
     pushStat = push(B, item);
 
+/*
     // ロックされていれば加算
     if(B->isLocked){
         pushCnt++;
@@ -184,52 +174,40 @@ void buffering(){
     if(B->isLocked == 0 && detectStartPoint(B, 4, 17, 2)){
         lockBuffer(B);
     }
-    
-    #endif
+*/
 }
 
-// CAN送信バッファ消化
-void popCANBuffer(){
-    // バッファから値をもらってくる
+// バッファをCAN経由でダンプする
+void dumpBufferViaCAN(Buffer *B){
+    int status = BUFFER_OK, idx = 0;
     Item item;
     initItem(&item);
-    int status = pop(CB, &item);
-    if(status == BUFFER_EMPTY){
-        return;
-    }
 
-    // デバイスID取得して
-    uint8_t deviceID[6];
-    getDeviceID(deviceID);
-
-    // CANメッセージを作って
-    union CANDataFrame {
-        struct Message {
-            uint8_t partialDeviceID[4];
-            float breakTime;
-        } message;
-        uint8_t rawValue[8];
-    };
-
-    CANDataFrame dataFrame;
-    dataFrame.message.breakTime = item.value;    
-    memcpy(dataFrame.message.partialDeviceID, deviceID, 4);
-
-    // 投げる
-    int result = can.sendFrame(deviceID[0], dataFrame.rawValue, 8);
-    if(result != CAN_OK){
-        Serial.println("Failed to send can frame.");
+    while(status == BUFFER_OK){
+        status = getItemAt(B, idx, &item);
+        if(status == BUFFER_OK){
+            double current = (item.value / 400.0) * 1000;
+            int status = sendCANDoubleValue(can, current);
+            if(status != CAN_OK){
+                Serial.print("CAN Send Failed:");
+                Serial.println(status);
+            }
+            delay(200);
+            idx++;
+        }
     }
 }
 
-// デバイスID取得
-void getDeviceID(uint8_t *id){
-    // 電源投入以降更新しない
-    static bool isRead = false;
-    static unsigned char internalID[6];
-    if(!isRead){
-        esp_efuse_mac_get_default(internalID);
-        isRead = true;
-    }
-    id = internalID;
+// double型の値をCANで送りつける
+int sendCANDoubleValue(CANAccessor can, double value){
+    // フレームを作り、値をセットして
+    union CANDataFrame {
+        double value;
+        uint8_t rawValue[8];
+    } dataFrame;
+    dataFrame.value = value;
+
+    // 投げる
+    int result = can.sendFrame(0x000, dataFrame.rawValue, 8);
+    return result;
 }
