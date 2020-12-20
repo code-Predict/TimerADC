@@ -18,7 +18,7 @@ CANAccessor::CANAccessor(byte csPin, byte intPin){
 ///     - clockFreq: クロック周波数 (定数 MCP_XXXMHZ)
 ///  - Return: 初期化に成功したら0を返す
 int CANAccessor::begin(uint8_t mode, uint8_t speedRate, uint8_t clockFreq){
-    *(this->can) = MCP_CAN(csPin);
+    *(this->can) = MCP_CAN(this->csPin);
     return !(this->can->begin(mode, speedRate, clockFreq) == CAN_OK);
 }
 

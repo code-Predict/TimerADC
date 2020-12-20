@@ -19,8 +19,8 @@
 #define ADC_BUFFER_SIZE 100
 #define CAN_BUFFER_SIZE 10
 
-#define MCP2515_CS_PIN 6 //TODO: 直す
-#define MCP2515_INT_PIN 6
+#define MCP2515_CS_PIN 5
+#define MCP2515_INT_PIN 17 // TODO: まだ結線してない(1220(日))
 
 // 割り込みベクタサイズ
 #define INTVECT_SIZE 5
