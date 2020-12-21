@@ -174,7 +174,7 @@ void dumpBuffer(Buffer *B){
     while(status == BUFFER_OK){
         status = getItemAt(B, idx, &item);
         if(status == BUFFER_OK){
-            Serial.println((item.value / 400.0) * 1000);
+            Serial.println((item.value / 400.0) * 1000); // mA
             idx++;
         }
     }
