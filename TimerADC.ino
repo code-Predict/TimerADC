@@ -143,13 +143,20 @@ void dumpADCValue(){
 void buffering(){
     static unsigned int pushStat = BUFFER_OK;
 
-    // 電圧を計算して
-    float volts = (float)((adc.getADCValue() * VREF * 1000) / (((long int)1<<23)-1));
+    // 電圧から電流を計算して
+    float volt = ((float)((adc.getADCValue() * VREF * 1000) / (((long int)1<<23)-1))) - (VREF / 2) * 1000;
+    float current = (volt / 400) * 1000; // in mA
+
+    // デバッグ出力
+    #define DEBUG
+    #ifdef DEBUG
+        Serial.println(current);
+    #endif
 
     // バッファに突っ込む
     Item item;
     initItem(&item);
-    item.value = volts - (VREF / 2) * 1000; // INA253A3はVREFを中心に動くので減算
+    item.value = current;
     pushStat = push(B, item);
 
     // ロックされていれば加算
@@ -174,7 +181,7 @@ void dumpBuffer(Buffer *B){
     while(status == BUFFER_OK){
         status = getItemAt(B, idx, &item);
         if(status == BUFFER_OK){
-            Serial.println((item.value / 400.0) * 1000); // mA
+            Serial.println(item.value); // mA
             idx++;
         }
     }

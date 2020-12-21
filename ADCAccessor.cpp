@@ -81,5 +81,6 @@ float ADCAccessor::getADCValue(){
 
 /// ADCから値を読む
 void ADCAccessor::updateADCValue(){
-    this->adcValue = pc_ads1220.Read_WaitForData();
+    float tmp = pc_ads1220.Read_WaitForData();
+    this->adcValue = (tmp != 0) ? tmp : this->adcValue;
 }
