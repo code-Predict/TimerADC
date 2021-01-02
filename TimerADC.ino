@@ -1,8 +1,8 @@
 /*
  * タイマ割込みでADCをいじる
 */
-#include "Buffer.h"
-#include "ADCAccessor.h"
+#include <Buffer.h>
+#include <ADCAccessor.h>
 #include "CANAccessor.h"
 
 #include "Prediction.h" // 推定関数の分割先

@@ -1,7 +1,7 @@
 /*
  * 推定関数
 */
-#include "Buffer.h"
+#include <Buffer.h>
 
 // ブレーキ時間推定関数
 bool detectStartPoint(Buffer *B, int sampleLen, int sense, int lowerBorder);
